@@ -1,63 +1,6 @@
-create database danny;
-use danny;
+################################## week -> 1 : questions ########################################################
 
--- CREATE SCHEMA dannys_diner;
--- SET search_path = dannys_diner;
-
--- CREATE TABLE sales (
---   customer_id VARCHAR(1),
---   order_date DATE,
---   product_id INTEGER
--- );
-
--- INSERT INTO sales
---   (customer_id, order_date, product_id)
--- VALUES
---   ('A', '2021-01-01', '1'),
---   ('A', '2021-01-01', '2'),
---   ('A', '2021-01-07', '2'),
---   ('A', '2021-01-10', '3'),
---   ('A', '2021-01-11', '3'),
---   ('A', '2021-01-11', '3'),
---   ('B', '2021-01-01', '2'),
---   ('B', '2021-01-02', '2'),
---   ('B', '2021-01-04', '1'),
---   ('B', '2021-01-11', '1'),
---   ('B', '2021-01-16', '3'),
---   ('B', '2021-02-01', '3'),
---   ('C', '2021-01-01', '3'),
---   ('C', '2021-01-01', '3'),
---   ('C', '2021-01-07', '3');
---  
-
--- CREATE TABLE menu (
---   product_id INTEGER,
---   product_name VARCHAR(5),
---   price INTEGER
--- );
-
--- INSERT INTO menu
---   (product_id, product_name, price)
--- VALUES
---   ('1', 'sushi', '10'),
---   ('2', 'curry', '15'),
---   ('3', 'ramen', '12');
---   
-
--- CREATE TABLE members (
---   customer_id VARCHAR(1),
---   join_date DATE
--- );
-
--- INSERT INTO members
---   (customer_id, join_date)
--- VALUES
---   ('A', '2021-01-07'),
---   ('B', '2021-01-09');
-  
-----------------------------------------------------------------------------------------------------------------------------
-################################## week -> 1 :questions ########################################################
-
+#### JOINING ALL TABLES:
 select s.*,m.product_name,m.price,mem.join_date from sales as s
 JOIN menu as m
 ON s.product_id = m.product_id
@@ -120,15 +63,130 @@ LIMIT 1;
 
 # 6. Which item was purchased first by the customer after they became a member?
 
+with cte as 
+  (select s.*,m.product_name,m.price,mem.join_date,
+  RANK() over(PARTITION BY s.customer_id ORDER BY s.order_date ASC) as rank_date
+  from sales as s
+  JOIN menu as m
+  ON s.product_id = m.product_id
+  JOIN members as mem
+  ON mem.customer_id=s.customer_id
+  WHERE s.order_date >= mem.join_date
+  ORDER BY s.order_date ASC)
+  
+SELECT customer_id,product_name
+from cte
+WHERE rank_date=1;
 
 # 7. Which item was purchased just before the customer became a member?
 
+with cte as 
+  (select s.*,m.product_name,m.price,mem.join_date,
+  RANK() over(PARTITION BY s.customer_id ORDER BY s.order_date DESC) as rank_date
+  from sales as s
+  JOIN menu as m
+  ON s.product_id = m.product_id
+  JOIN members as mem
+  ON mem.customer_id=s.customer_id
+  WHERE s.order_date < mem.join_date)
+  
+SELECT customer_id,product_name
+from cte
+WHERE rank_date=1;
 
 # 8. What is the total items and amount spent for each member before they became a member?
-
+select s.customer_id,
+  SUM(price) as total_spent,
+  COUNT(product_name) as number_of_items_oredered
+  from sales as s
+  JOIN menu as m
+  ON s.product_id = m.product_id
+  JOIN members as mem
+  ON mem.customer_id=s.customer_id
+  WHERE s.order_date < mem.join_date
+  GROUP BY s.customer_id 
+  ORDER BY s.customer_id;
 
 # 9. If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
 
+select customer_id, sum(points) as total_points
+from
+  (select s.customer_id, s.product_id,m.product_name,
+  CASE
+    WHEN product_name = 'sushi' THEN price*20
+    ELSE price*10
+  END as points
+  from sales as s
+  JOIN menu as m
+  ON s.product_id = m.product_id) as 
+t
+GROUP BY t.customer_id;
 
 # 10. In the first week after a customer joins the program (including their join date) they earn 2x points on all items, 
 #      not just sushi - how many points do customer A and B have at the end of January?
+
+select t.customer_id, 
+SUM(t.points) as total_points_earned
+FROM
+  (select s.customer_id,m.product_name,m.price,mem.join_date,
+  DATE_ADD(join_date,INTERVAL 6 DAY) as week_after,
+  CASE
+    WHEN order_date BETWEEN join_date AND DATE_ADD(join_date,INTERVAL 6 DAY) THEN price*20
+    WHEN product_name = 'sushi' THEN price * 20 
+    ELSE price*10
+  END AS points
+  from sales as s
+  JOIN menu as m
+  ON s.product_id = m.product_id
+  JOIN members as mem
+  ON mem.customer_id=s.customer_id
+  WHERE MONTH(order_date)=1
+  ORDER BY customer_id,points) as 
+t
+GROUP BY t.customer_id;
+
+
+
+############ BONUS questions
+
+## bq-1: Join All The Things
+
+select s.customer_id,s.order_date,m.product_name,m.price,
+CASE 
+  WHEN s.order_date >= mem.join_date THEN "Y"
+  ELSE "N"
+END as memebr
+from sales as s
+JOIN menu as m
+ON s.product_id = m.product_id
+LEFT JOIN members as mem
+ON mem.customer_id=s.customer_id
+ORDER BY customer_id,order_date;
+
+## bq-2 : Rank All The Things
+
+with cte as 
+  (select s.customer_id,s.order_date,m.product_name,m.price,
+    CASE 
+      WHEN s.order_date >= mem.join_date THEN "Y"
+      ELSE "N"
+    END as memeber,
+    ROW_NUMBER() over() as rn
+  from sales as s
+  JOIN menu as m
+  ON s.product_id = m.product_id
+  LEFT JOIN members as mem
+  ON mem.customer_id=s.customer_id
+  ORDER BY customer_id,order_date),
+
+
+cte2 as 
+  (select cte.customer_id, cte.order_date,cte.product_name,cte.rn,
+  RANK() OVER(PARTITION BY cte.customer_id ORDER BY cte.order_date ASC) as ranking
+  from cte
+  WHERE memeber='Y')
+
+select cte.customer_id, cte.order_date,cte.product_name,cte2.ranking 
+from cte
+LEFT JOIN cte2
+ON (cte.rn=cte2.rn);
