@@ -190,3 +190,34 @@ select cte.customer_id, cte.order_date,cte.product_name,cte2.ranking
 from cte
 LEFT JOIN cte2
 ON (cte.rn=cte2.rn);
+
+
+################################################ END ##################################################################
+
+WITH CTE AS (
+  SELECT 
+    S.customer_id, 
+    S.order_date, 
+    product_name, 
+    price, 
+    CASE 
+      WHEN join_date IS NULL THEN 'N'
+      WHEN order_date < join_date THEN 'N'
+      ELSE 'Y' 
+    END as member 
+  FROM 
+    SALES as S 
+    INNER JOIN MENU AS M ON S.product_id = M.product_id
+    LEFT JOIN MEMBERS AS MEM ON MEM.customer_id = S.customer_id
+  ORDER BY 
+    customer_id, 
+    order_date, 
+    price DESC
+)
+SELECT 
+  *
+  ,CASE 
+    WHEN member = 'N'  THEN NULL
+    ELSE RANK() OVER(PARTITION BY customer_id, member ORDER BY order_date)  
+  END as rnk
+FROM CTE;
